@@ -19,6 +19,8 @@ mkdir -p "$HOME/.funes/agents" "$tmp/bin"
 cat >"$tmp/bin/funes" <<'FAKE'
 #!/bin/sh
 printf '%s: %s\n' "${HF_HUB_USER_AGENT_ORIGIN:-}" "$*" >>"$FUNES_TEST_CLI_LOG"
+# An index finds the memory busy, as funes reports it, while the test says so.
+[ "$1" != index ] || [ ! -e "$FUNES_TEST_CLI_LOG.busy" ] || exit 75
 FAKE
 chmod +x "$tmp/bin/funes"
 export PATH="$tmp/bin:/usr/bin:/bin"
@@ -147,6 +149,39 @@ funes; agent/codex; agent_version/0.141.0: index --harness codex
 funes; agent/codex; agent_version/0.141.0: push acme/kb
 funes; agent/codex; agent_version/0.141.0: index --harness codex"
 [ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "funes was asked, turn after turn:
+$(cat "$FUNES_TEST_CLI_LOG")"
+
+# A turn whose index fails does not push, even when a push is due: it would miss that turn. The
+# stamp stays as it was, so the next turn that indexes pushes.
+i="funes; agent/codex; agent_version/0.141.0: index --harness codex"
+p="funes; agent/codex; agent_version/0.141.0: push acme/kb"
+: >"$FUNES_TEST_CLI_LOG"
+touch -t 202001010000 "$data/pushed"
+: >"$FUNES_TEST_CLI_LOG.busy"
+fire
+rm "$FUNES_TEST_CLI_LOG.busy"
+fire
+[ "$(cat "$FUNES_TEST_CLI_LOG")" = "$i
+$i
+$p" ] || fail "funes was asked, around a failed index:
+$(cat "$FUNES_TEST_CLI_LOG")"
+
+# A boundary whose index never goes through still pushes what the memory holds, and leaves the
+# stamp as it was, so the next turn that indexes pushes what that push missed.
+: >"$FUNES_TEST_CLI_LOG"
+touch -t 202001010000 "$data/pushed"
+: >"$FUNES_TEST_CLI_LOG.busy"
+fire --publish
+rm "$FUNES_TEST_CLI_LOG.busy"
+fire
+[ "$(cat "$FUNES_TEST_CLI_LOG")" = "$i
+$i
+$i
+$i
+$i
+$p
+$i
+$p" ] || fail "funes was asked, around a boundary's failed index:
 $(cat "$FUNES_TEST_CLI_LOG")"
 
 # What a session writes while the hook converts the rollout it named is converted by the next sweep.

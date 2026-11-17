@@ -16,6 +16,8 @@ mkdir -p "$tmp/bin" "$tmp/scripts"
 cat >"$tmp/bin/funes" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >>"$FUNES_TEST_CLI_LOG"
+# An index finds the memory busy, as funes reports it, while the test says so.
+[ "$1" != index ] || [ ! -e "$FUNES_TEST_CLI_LOG.busy" ] || exit 75
 FAKE
 chmod +x "$tmp/bin/funes"
 export PATH="$tmp/bin:/usr/bin:/bin"
@@ -51,4 +53,31 @@ push acme/kb" "at a turn after the last push aged"
 sh "$script" --publish acme/kb
 asked "index --harness pi
 push acme/kb" "at a boundary"
+
+# A turn whose index fails does not push, even when a push is due: it would miss that turn. The
+# stamp stays as it was, so the next turn that indexes pushes.
+touch -t 202001010000 "$tmp/scripts/pushed"
+: >"$FUNES_TEST_CLI_LOG.busy"
+sh "$script" acme/kb
+asked "index --harness pi" "at a turn whose index failed"
+rm "$FUNES_TEST_CLI_LOG.busy"
+sh "$script" acme/kb
+asked "index --harness pi
+push acme/kb" "at the turn after a failed index"
+
+# A boundary whose index never goes through still pushes what the memory holds, and leaves the
+# stamp as it was, so the next turn that indexes pushes what that push missed.
+touch -t 202001010000 "$tmp/scripts/pushed"
+: >"$FUNES_TEST_CLI_LOG.busy"
+sh "$script" --publish acme/kb
+asked "index --harness pi
+index --harness pi
+index --harness pi
+index --harness pi
+index --harness pi
+push acme/kb" "at a boundary whose index failed"
+rm "$FUNES_TEST_CLI_LOG.busy"
+sh "$script" acme/kb
+asked "index --harness pi
+push acme/kb" "at the turn after that boundary"
 echo "pi index: ok"

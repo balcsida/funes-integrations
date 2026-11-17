@@ -119,10 +119,8 @@ bound_memory() { head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]'; }
 
 # Push what the local memory holds to the memory `$1`. A first push to a memory this index shares
 # no chunks with is refused off a terminal. funes does it once, interactively, when it binds the
-# memory. The `pushed` stamp says when the last push started, whatever its outcome, so a turn
-# retries a failed one `PUSH_EVERY` minutes later rather than at every turn.
+# memory.
 push() {
-    : >"$DATA/pushed"
     log "push: start ($1)"
     "$funes" push "$1" >>"$LOG" 2>&1
     rc=$?
@@ -134,11 +132,15 @@ push() {
 }
 
 # The boundary's second half: land the turns in the memory, waiting out a per-turn worker that may
-# still hold its lock, then push them to the memory `setup add` recorded beside this script.
+# still hold its lock, then push them to the memory `setup add` recorded beside this script. A push
+# after an index that never went through misses the last turns, so it leaves the `pushed` stamp as
+# it was, and the next turn that indexes pushes them.
 publish() {
+    indexed=
     for attempt in 1 2 3 4 5; do
         if "$funes" index --harness "$HARNESS" >>"$LOG" 2>&1; then
             log "index[$HARNESS]: ok (before push)"
+            indexed=1
             break
         fi
         log "index[$HARNESS]: busy or failed, retry $attempt"
@@ -149,6 +151,7 @@ publish() {
         log "push: skipped (no memory bound)"
         return
     fi
+    [ -z "$indexed" ] || : >"$DATA/pushed"
     push "$memory"
 }
 
@@ -197,13 +200,19 @@ worker() {
         log "index[$HARNESS]: ok"
     else
         log "index[$HARNESS]: FAILED (exit $?)"
+        # A push now would miss this turn, and its stamp would hold the turn back `PUSH_EVERY`
+        # minutes more. The next turn that indexes pushes it.
+        return
     fi
 
     # A session can stop without its end firing (a window closed, a host disconnected), so a turn
-    # publishes too, once the last push is `PUSH_EVERY` minutes old. Runs side by side may both
-    # push: funes lets one through and the other steps aside.
+    # publishes too, once the last push is `PUSH_EVERY` minutes old. The `pushed` stamp says when
+    # the last push after a successful index started, whatever the push's outcome, so a failed
+    # push waits `PUSH_EVERY` minutes rather than retrying at every turn. Runs side by side may
+    # both push: funes lets one through and the other steps aside.
     memory=$(bound_memory)
     if [ -n "$memory" ] && [ -z "$(find "$DATA/pushed" -mmin -"$PUSH_EVERY" 2>/dev/null)" ]; then
+        : >"$DATA/pushed"
         push "$memory"
     fi
 }
