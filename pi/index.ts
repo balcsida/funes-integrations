@@ -83,18 +83,8 @@ class FunesMcp {
     if (this.child && this.ready) return this.ready;
     const child = spawn(FUNES_BIN, FUNES_ARGS, { env: funesEnv(), stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
-    // The server is kept warm for the whole session, so unref it (and its pipes)
-    // — an in-flight call's timer keeps the loop alive, but once the agent's turn
-    // is done nothing should. Without this the idle child pins the host's event
-    // loop open and the turn never exits.
-    child.unref();
-    child.stdin.unref();
-    child.stdout.unref();
-    child.stderr.unref();
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => this.onData(chunk));
-    child.stderr.resume(); // drain logs so the pipe never blocks
     const die = (err: Error) => {
+      if (this.child !== child) return;
       this.child = undefined;
       this.ready = undefined;
       for (const p of this.pending.values()) {
@@ -105,12 +95,26 @@ class FunesMcp {
     };
     child.on("exit", (code) => die(new Error(`funes mcp exited (code ${code})`)));
     child.on("error", (e) => die(new Error(`funes mcp failed to start: ${e.message}`)));
-    // A write to a child that has just exited fails on the pipe, ahead of the exit itself; unheard,
-    // that error would take the host down.
-    child.stdin.on("error", (e) => die(new Error(`funes mcp went away: ${e.message}`)));
+    // A failed spawn can have no pipes. Wait for it before accessing them.
+    const spawned = new Promise<void>((resolve, reject) => {
+      child.once("spawn", () => {
+        child.removeListener("error", reject);
+        resolve();
+      });
+      child.once("error", reject);
+    });
 
     const start = (async () => {
       try {
+        await spawned;
+        child.stdin.on("error", (e) => die(new Error(`funes mcp went away: ${e.message}`)));
+        // Calls keep their timers alive. An idle server must let pi exit.
+        child.unref();
+        child.stdout.unref?.();
+        child.stderr.unref?.();
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => this.onData(chunk));
+        child.stderr.resume();
         await this.request(
           "initialize",
           {

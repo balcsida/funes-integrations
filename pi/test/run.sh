@@ -37,7 +37,7 @@ node) TS=--experimental-strip-types ;;
 *) TS= ;;
 esac
 if ! "$JS" $TS "$HERE/startup.mjs"; then
-    echo "pi startup: a history setup left pending is not indexed at the next start — see above" >&2
+    echo "pi startup: the extension failed to load, register tools or index history (see above)" >&2
     exit 1
 fi
 echo "pi startup: ok"
