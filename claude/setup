@@ -231,7 +231,8 @@ remove() {
     # a re-add cannot rebuild, and leaving it would have funes keep indexing an agent it no longer
     # serves.
     rm -rf "$(spool_dir)" "$LEGACY"
-    rm -rf "$PLUGIN_ROOT/funes/scripts/spool" "$PLUGIN_ROOT/funes/scripts/converted" "$PLUGIN_ROOT/funes/scripts/indexed"
+    rm -rf "$PLUGIN_ROOT/funes/scripts/spool" "$PLUGIN_ROOT/funes/scripts/converted" "$PLUGIN_ROOT/funes/scripts/indexed" \
+        "$PLUGIN_ROOT/funes/scripts/pushed"
 
     if ! have_claude; then
         echo "\`claude\` isn't on PATH — the plugin files were removed. Once it is, remove the registrations manually:"

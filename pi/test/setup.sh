@@ -61,10 +61,12 @@ rm "$tmp/bin/node" "$FUNES_HOME/spool/pi/session.funes.jsonl"
 grep -q "no JS runtime" "$tmp/add.err" || fail "the seed did not say it was left pending: $(cat "$tmp/add.err")"
 [ "$(cat "$dir/seed-pending")" = "$sessions" ] || fail "the history was not left for the extension"
 
+: >"$dir/scripts/pushed"
 : >"$FUNES_TEST_CLI_LOG"
 "$setup" remove >/dev/null
 [ ! -e "$dir/spool" ] || fail "the spool record stays"
 [ ! -e "$dir/sessions" ] && [ ! -e "$dir/seed-pending" ] || fail "the records stay"
+[ ! -e "$dir/scripts/pushed" ] || fail "the last push's stamp stays"
 [ ! -e "$FUNES_HOME/spool/pi" ] || fail "the spool stays"
 [ "$(cat "$FUNES_TEST_CLI_LOG")" = "remove $dir" ] || fail "pi was asked:
 $(cat "$FUNES_TEST_CLI_LOG")"
