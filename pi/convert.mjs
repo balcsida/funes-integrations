@@ -287,9 +287,18 @@ export function convertTree(root, spool, since = 0, except = "") {
   return written;
 }
 
-// `import.meta.url` is the resolved path; argv[1] is not, so a run through a symlinked directory
-// (macOS's /tmp) would otherwise miss.
-if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+// A compiled host can put a virtual path in argv[1]. Other filesystem errors must still fail.
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+if (invokedDirectly()) {
   const [src, spool] = process.argv.slice(2);
   if (!src || !spool) {
     console.error("usage: convert.mjs <session.jsonl | sessions-root> <spool-dir>");
