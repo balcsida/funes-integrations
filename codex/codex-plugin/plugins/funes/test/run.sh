@@ -19,4 +19,22 @@ if [ "$out/got.funes.jsonl" -nt "$HERE/session.jsonl" ] || [ "$out/got.funes.jso
     echo "codex converter: the turns file does not carry the rollout's own time" >&2
     exit 1
 fi
+
+# The first four turns were captured with Codex 0.169.0, a Stop hook and a local mock model server.
+# Paths and session metadata are normalized. Later turns cover multiple hooks and user messages
+# that quote or mix hook text.
+cat >"$out/want" <<'EOF'
+0 user
+1 assistant
+2 system
+3 assistant
+4 system
+5 user
+6 user
+EOF
+"$HERE/../convert" "$HERE/attribution.jsonl" | jq -r '"\(.seq) \(.role)"' >"$out/got"
+if ! diff -u "$out/want" "$out/got"; then
+    echo "codex converter: a turn has the wrong role, see the diff above" >&2
+    exit 1
+fi
 echo "codex converter: ok"
