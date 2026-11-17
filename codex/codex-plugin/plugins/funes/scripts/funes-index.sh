@@ -3,7 +3,8 @@
 # rollout changed since the last run, then advance the index over it. Fired by the Stop hook, whose
 # payload arrives on stdin — and, as `funes-index.sh --publish`, by the session boundaries, where
 # the same conversion runs first and the publish follows it, so the last turn is in the spool before
-# it is indexed and pushed.
+# it is indexed and pushed. With a memory bound, a turn pushes as well, once the last push is
+# `PUSH_EVERY` minutes old.
 #
 # The foreground half reads that payload and returns, so a turn never waits on the conversion or on
 # the embedder; the worker it leaves behind does both. Detaching uses nohup alone, which is portable
@@ -25,6 +26,9 @@ CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
 DATA="${PLUGIN_DATA:-$CODEX_DIR/plugins/data/funes-huggingface}"
 LOG="$DATA/funes-sync.log"
 HARNESS=codex
+# How old the last push gets, in minutes, before a turn pushes too. A push compacts the remote once
+# enough rows sit unindexed there, so many small pushes compact it more often than a few large ones.
+PUSH_EVERY=60
 
 mkdir -p "$DATA"
 log() { printf '%s %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$*" >>"$LOG"; }
@@ -110,10 +114,27 @@ convert_stale() {
     [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"
 }
 
+# The memory `setup add` recorded beside this script, empty when it was handed none.
+bound_memory() { head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]'; }
+
+# Push what the local memory holds to the memory `$1`. A first push to a memory this index shares
+# no chunks with is refused off a terminal. funes does it once, interactively, when it binds the
+# memory. The `pushed` stamp says when the last push started, whatever its outcome, so a turn
+# retries a failed one `PUSH_EVERY` minutes later rather than at every turn.
+push() {
+    : >"$DATA/pushed"
+    log "push: start ($1)"
+    "$funes" push "$1" >>"$LOG" 2>&1
+    rc=$?
+    case "$rc" in
+    0) log "push: ok" ;;
+    2) log "push: WARN — secrets held back; run \`funes scrub\`, then it publishes next run" ;;
+    *) log "push: FAILED (exit $rc)" ;;
+    esac
+}
+
 # The boundary's second half: land the turns in the memory, waiting out a per-turn worker that may
-# still hold its lock, then push them to the memory `setup add` recorded beside this script. A first
-# push to a memory this index shares no chunks with is refused off a terminal. funes does it once,
-# interactively, when it binds the memory.
+# still hold its lock, then push them to the memory `setup add` recorded beside this script.
 publish() {
     for attempt in 1 2 3 4 5; do
         if "$funes" index --harness "$HARNESS" >>"$LOG" 2>&1; then
@@ -123,19 +144,12 @@ publish() {
         log "index[$HARNESS]: busy or failed, retry $attempt"
         sleep 2
     done
-    memory=$(head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]')
+    memory=$(bound_memory)
     if [ -z "$memory" ]; then
         log "push: skipped (no memory bound)"
         return
     fi
-    log "push: start ($memory)"
-    "$funes" push "$memory" >>"$LOG" 2>&1
-    rc=$?
-    case "$rc" in
-    0) log "push: ok" ;;
-    2) log "push: WARN — secrets held back; run \`funes scrub\`, then it publishes next run" ;;
-    *) log "push: FAILED (exit $rc)" ;;
-    esac
+    push "$memory"
 }
 
 worker() {
@@ -183,6 +197,14 @@ worker() {
         log "index[$HARNESS]: ok"
     else
         log "index[$HARNESS]: FAILED (exit $?)"
+    fi
+
+    # A session can stop without its end firing (a window closed, a host disconnected), so a turn
+    # publishes too, once the last push is `PUSH_EVERY` minutes old. Runs side by side may both
+    # push: funes lets one through and the other steps aside.
+    memory=$(bound_memory)
+    if [ -n "$memory" ] && [ -z "$(find "$DATA/pushed" -mmin -"$PUSH_EVERY" 2>/dev/null)" ]; then
+        push "$memory"
     fi
 }
 

@@ -315,10 +315,12 @@ export default async function (pi: any) {
     else if (seeded) runScript(INDEX_SH);
   });
 
-  // Per turn, so a session killed mid-flight is indexed up to its last completed turn.
+  // Per turn, so a session killed mid-flight is indexed up to its last completed turn and, with a
+  // memory bound, pushed once the script's last push is `PUSH_EVERY` minutes old.
   pi.on("turn_end", async (_event: any, ctx: any) => {
     convertStale(convertSession(ctx));
-    runScript(INDEX_SH);
+    if (memory) runScript(INDEX_SH, memory);
+    else runScript(INDEX_SH);
   });
 
   // A reload replaces the extension instance without ending the session: nothing to publish.

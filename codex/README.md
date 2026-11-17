@@ -9,8 +9,9 @@ marketplace root whose one plugin is `plugins/funes` — registered with
 `codex plugin marketplace add` + `codex plugin add`. It carries the hooks and a small skill, which
 is what lets Codex recognize funes as memory before it loads any of its tools. Codex writes its own
 `config.toml` — funes never does — and nothing of funes's goes into Codex's own `hooks.json`.
-`Stop` indexes the turn just completed; `SessionEnd` and `SessionStart` publish with a memory
-bound. How the hooks work is in this repository's [README](../README.md#how-the-bundles-automate).
+`Stop` indexes the turn just completed. With a memory bound, `SessionEnd` and `SessionStart`
+publish, and so does a turn once the last push is an hour old. How the hooks work is in this
+repository's [README](../README.md#how-the-bundles-automate).
 
 **Codex runs a hook only once you have trusted it.** After installing, run `/hooks` in Codex and
 review them. Until then Codex skips them and nothing is indexed or published

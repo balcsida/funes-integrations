@@ -8,9 +8,9 @@ Claude Code has an MCP client, so the read tools are `funes mcp` registered user
 binary on PATH. Claude Code has a plugin system, so the skill and automation live in a plugin at
 `~/.funes/agents/claude/claude-plugin`, registered with `claude plugin marketplace add` +
 `claude plugin install`; Claude's loader activates its hooks — funes never edits your
-`settings.json`. `Stop` and `SubagentStop` index the turn just completed; `SessionEnd` and
-`SessionStart` publish with a memory bound. How the hooks work is in this repository's
-[README](../README.md#how-the-bundles-automate).
+`settings.json`. `Stop` and `SubagentStop` index the turn just completed. With a memory bound,
+`SessionEnd` and `SessionStart` publish, and so does a turn once the last push is an hour old.
+How the hooks work is in this repository's [README](../README.md#how-the-bundles-automate).
 
 The plugin's funes skill guides searches for earlier answers, including filtering out tool output,
 reading surrounding turns, and checking the indexing backlog when recent work is missing.

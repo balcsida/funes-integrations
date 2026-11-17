@@ -26,10 +26,13 @@ ran, so a session whose own hook never fired — untrusted, timed out, a host th
 caught at the next turn; the run is time-boxed, so a backlog fills in a bounded step per turn. At
 the session boundaries, as `funes-index.sh --publish` and only with a memory bound, it converts,
 indexes — waiting out a per-turn run's lock — and pushes; it runs at the session's end and again at
-the next start, catching up whatever a missed end left behind. The conversion is the bundle's own
-converter: a script for Claude Code and Codex, the extension or plugin itself for pi and Hermes. The
-work runs detached, so a hook returns in well under a second and never blocks the turn or trips a
-timeout. The memory rides in a file beside the scripts, so every hooks file is static.
+the next start, catching up whatever a missed end left behind. With a memory bound, a turn pushes
+too once the last push is an hour old: a session can stop without its end ever firing (a
+conversation switched away, a window closed, a host disconnected), and the next start may never
+come on that host. The conversion is the bundle's own converter: a script for Claude Code and
+Codex, the extension or plugin itself for pi and Hermes. The work runs detached, so a hook returns
+in well under a second and never blocks the turn or trips a timeout. The memory rides in a file
+beside the scripts, so every hooks file is static.
 
 | Bundle | Per turn | Publish, with a memory bound |
 | --- | --- | --- |

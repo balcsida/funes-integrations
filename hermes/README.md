@@ -9,8 +9,9 @@ discovers plugins under its own home, so the automation is a plugin at `~/.herme
 enabled with `hermes plugins enable funes`. Its lifecycle hooks convert each completed turn out of
 Hermes's session store into funes's spool and index it (`post_llm_call`), and, with a memory bound,
 publish at the session boundaries — `on_session_finalize` at the true end, `on_session_start` to
-catch up whatever a missed end left behind. Plugin hooks are not shell hooks, so Hermes's consent
-allowlist (`~/.hermes/shell-hooks-allowlist.json`) is not involved. How the hooks work is in this
+catch up whatever a missed end left behind. With a memory bound, a turn publishes too, once the
+last push is an hour old. Plugin hooks are not shell hooks, so Hermes's consent allowlist
+(`~/.hermes/shell-hooks-allowlist.json`) is not involved. How the hooks work is in this
 repository's [README](../README.md#how-the-bundles-automate).
 
 ## Install

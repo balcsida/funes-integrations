@@ -120,16 +120,33 @@ fire
 [ ! -e "$spool/rollout-b.funes.jsonl" ] || fail "a rollout unchanged since the last sweep was converted again"
 
 # A boundary: what was written since is converted first, then the index and the push to the
-# memory recorded beside the scripts.
+# memory recorded beside the scripts. Of the turns before it, the first had no push behind it and
+# pushed after its index, and the second indexed alone.
 tick
 rollout rollout-d.jsonl
 fire --publish
 [ -f "$spool/rollout-d.funes.jsonl" ] || fail "the boundary did not convert before publishing"
 expected="funes; agent/codex; agent_version/0.141.0: index --harness codex
+funes; agent/codex; agent_version/0.141.0: push acme/kb
 funes; agent/codex; agent_version/0.141.0: index --harness codex
 funes; agent/codex; agent_version/0.141.0: index --harness codex
 funes; agent/codex; agent_version/0.141.0: push acme/kb"
 [ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "funes was asked:
+$(cat "$FUNES_TEST_CLI_LOG")"
+
+# A session can stop without its end firing, so a turn pushes too, once the last push is an hour
+# old: not right after the boundary's push, then at the turn after that push has aged, which leaves
+# the next turn to index alone.
+: >"$FUNES_TEST_CLI_LOG"
+fire
+touch -t 202001010000 "$data/pushed"
+fire
+fire
+expected="funes; agent/codex; agent_version/0.141.0: index --harness codex
+funes; agent/codex; agent_version/0.141.0: index --harness codex
+funes; agent/codex; agent_version/0.141.0: push acme/kb
+funes; agent/codex; agent_version/0.141.0: index --harness codex"
+[ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "funes was asked, turn after turn:
 $(cat "$FUNES_TEST_CLI_LOG")"
 
 # What a session writes while the hook converts the rollout it named is converted by the next sweep.

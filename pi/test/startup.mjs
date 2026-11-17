@@ -3,8 +3,8 @@
 // with a memory bound, which indexes first, and the index worker without — and a `funes` that dies
 // as the session starts costs recall and nothing else. Per turn, the session in progress is
 // converted, then the sessions the last sweep missed, under the root `setup` found and nowhere
-// else. Loads index.ts with a fake pi and a fake `funes mcp`, and reads what the worker saw in the
-// spool when it started.
+// else, and the worker is handed the memory bound, if any. Loads index.ts with a fake pi and a fake
+// `funes mcp`, and reads what the worker saw in the spool when it started.
 //
 //   node integrations/pi/test/startup.mjs    (run.sh runs it)
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -103,9 +103,9 @@ async function startup(memory, funes = "exec cat") {
 }
 
 // A turn of the session at `file`, with `stale` written since the last sweep and `foreign` a
-// `.jsonl` no sweep may touch: what the spool holds afterwards.
-async function turn(root, file, stale, foreign) {
-  const { ext, spool, log } = install(root);
+// `.jsonl` no sweep may touch: what the spool holds afterwards, and what the worker was handed.
+async function turn(root, file, stale, foreign, memory = "") {
+  const { ext, spool, log } = install(root, { memory });
   process.env.FUNES_BIN = fakeFunes(root, "exec cat");
   const handlers = await activate(ext);
   // The records are older than the sessions, so the sweep sees the sessions as new.
@@ -113,9 +113,9 @@ async function turn(root, file, stale, foreign) {
   const named = session(dirname(file), file.split("/").pop());
   const others = [session(dirname(stale), stale.split("/").pop()), session(dirname(foreign), foreign.split("/").pop())];
   await handlers.turn_end({}, { sessionManager: { getSessionFile: () => named } });
-  await workerLog(log, "the turn");
+  const worker = (await workerLog(log, "the turn")).split("\n")[0];
   const converted = (p) => existsSync(join(spool, `${p.split("/").pop().replace(/\.jsonl$/, "")}.funes.jsonl`));
-  return { named: converted(named), stale: converted(others[0]), foreign: converted(others[1]), swept: existsSync(join(ext, "swept")) };
+  return { named: converted(named), stale: converted(others[0]), foreign: converted(others[1]), swept: existsSync(join(ext, "swept")), worker };
 }
 
 // The `funes mcp` it spawns, and the worker, name funes, pi and its version in their Hub requests.
@@ -152,6 +152,14 @@ if (!dying.notices.some((text) => text.startsWith("funes recall is unavailable")
   if (!got.named || !got.stale) throw new Error(`under the root: expected both sessions converted, got ${JSON.stringify(got)}`);
   if (got.foreign) throw new Error("under the root: a file beside the root was converted");
   if (!got.swept) throw new Error("under the root: the sweep left no mark");
+  if (got.worker !== "funes-index.sh") throw new Error(`under the root: expected the index worker, got ${got.worker}`);
+}
+// With a memory bound, the turn's worker is handed it, to push once the last push is old enough.
+{
+  const root = mkdtempSync(join(tmpdir(), "funes-pi-turn-"));
+  const sessions = join(root, "sessions");
+  const got = await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"), "acme/kb");
+  if (got.worker !== "funes-index.sh acme/kb") throw new Error(`memory bound: expected the turn's worker handed the memory, got ${got.worker}`);
 }
 // A session pi was pointed elsewhere (`--session-dir`) sits in that directory with no directory
 // per project: its own directory is swept, and nothing above it.

@@ -201,6 +201,7 @@ legacy="$HOME/.funes/integrations/claude-plugin"
 mkdir -p "$legacy" "$HOME/.funes/memory/chunks.lance"
 printf owned >"$legacy/marker"
 printf memory >"$HOME/.funes/memory/chunks.lance/keep"
+: >"$plugin/funes/scripts/pushed"
 : >"$FUNES_TEST_CLI_LOG"
 "$setup" remove >/dev/null
 [ ! -e "$legacy" ] || fail "the pre-registry install stays"
@@ -208,6 +209,7 @@ printf memory >"$HOME/.funes/memory/chunks.lance/keep"
 [ ! -e "$plugin/funes/scripts/spool" ] || fail "the spool record stays"
 [ ! -e "$plugin/funes/scripts/indexed" ] || fail "the memory's rows stay"
 [ ! -e "$mark" ] || fail "the mark stays"
+[ ! -e "$plugin/funes/scripts/pushed" ] || fail "the last push's stamp stays"
 [ "$(cat "$HOME/.funes/memory/chunks.lance/keep")" = memory ] || fail "the memory was touched"
 expected="mcp remove funes -s user
 plugin uninstall funes@huggingface

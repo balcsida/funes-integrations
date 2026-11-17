@@ -129,6 +129,21 @@ mine; funes; agent/claude; agent_version/2.1.175: push acme/kb"
 [ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "funes was asked:
 $(cat "$FUNES_TEST_CLI_LOG")"
 
+# A session can stop without its end firing, so with a memory bound a turn pushes too, once the
+# last push is an hour old: not right after the boundary's push, then at the turn after that
+# push has aged, which leaves the next turn to index alone.
+: >"$FUNES_TEST_CLI_LOG"
+fire
+touch -t 202001010000 "$scripts/pushed"
+fire
+fire
+expected="mine; funes; agent/claude; agent_version/2.1.175: index --harness claude
+mine; funes; agent/claude; agent_version/2.1.175: index --harness claude
+mine; funes; agent/claude; agent_version/2.1.175: push acme/kb
+mine; funes; agent/claude; agent_version/2.1.175: index --harness claude"
+[ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "funes was asked, turn after turn:
+$(cat "$FUNES_TEST_CLI_LOG")"
+
 # A session the memory holds without its queued messages keeps that numbering: the rows `setup add`
 # keeps beside the scripts reach the converter.
 tick
