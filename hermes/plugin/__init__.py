@@ -8,6 +8,7 @@ the memory it was handed. With none, the file is absent, and the publish hooks a
 """
 
 import os
+import shutil
 import subprocess
 import time
 
@@ -83,17 +84,43 @@ def _convert_stale(named):
         pass
 
 
+def _sh():
+    """The `sh` to run the scripts with: the one on PATH, the one shell a box running hermes is
+    promised — except on Windows, which has none of its own, where Git for Windows' is taken from
+    beside the `git` on PATH, or from where its installer puts it."""
+    found = shutil.which("sh")
+    if found or os.name != "nt":
+        return found or "sh"
+    roots = []
+    git = shutil.which("git")
+    if git:
+        roots.append(os.path.dirname(os.path.dirname(git)))
+    for base in ("ProgramFiles", "ProgramW6432", "LOCALAPPDATA"):
+        if os.environ.get(base):
+            roots += [os.path.join(os.environ[base], "Git"), os.path.join(os.environ[base], "Programs", "Git")]
+    for root in roots:
+        candidate = os.path.join(root, "bin", "sh.exe")
+        if os.path.isfile(candidate):
+            return candidate
+    return "sh"
+
+
 def _spawn(script, *args):
-    """Run `script` detached and forget it — through `sh`, the one shell a box running hermes is
-    promised."""
+    """Run `script` detached and forget it, through `sh`. On Windows the script is named with `/`,
+    which a shell does not take for an escape, and the worker gets no console window to show."""
     env = dict(os.environ, HF_HUB_USER_AGENT_ORIGIN=_hub_origin())
+    path = os.path.join(HERE, script)
+    detach = {"start_new_session": True}
+    if os.name == "nt":
+        path = path.replace("\\", "/")
+        detach = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
     subprocess.Popen(
-        ["sh", os.path.join(HERE, script), *args],
+        [_sh(), path, *args],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        **detach,
     )
 
 
