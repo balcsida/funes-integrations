@@ -15,15 +15,26 @@
 set -u
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+# A path as this shell spells it. Codex on Windows names a rollout and its directories as Windows
+# does, `C:\Users\…`, which a `/` cannot split and which is not what `find` lists; Git's `cygpath`
+# gives the spelling `find` uses.
+posix_path() {
+    case $1 in
+    [A-Za-z]:[\\/]*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    esac
+    printf '%s\n' "$1"
+}
+
 # Written by `setup add`: the directory funes drains for this agent.
 SPOOL=$(cat "$HERE/spool" 2>/dev/null || true)
-CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
+CODEX_DIR=$(posix_path "${CODEX_HOME:-$HOME/.codex}")
 # What a run writes (its log, the sweep's mark) goes in the directory Codex keeps for the plugin's
 # data and names to its hooks, never beside this script: trusting the hooks pins a hash of the whole
 # plugin, checked before each run, so a file written into it voids the trust at the first turn.
 # Without Codex to name the directory, it is where Codex has it, which is where the walk `setup add`
 # makes leaves the mark it shares with the sweeps.
-DATA="${PLUGIN_DATA:-$CODEX_DIR/plugins/data/funes-huggingface}"
+DATA=$(posix_path "${PLUGIN_DATA:-$CODEX_DIR/plugins/data/funes-huggingface}")
 LOG="$DATA/funes-sync.log"
 HARNESS=codex
 # How old the last push gets, in minutes, before a turn pushes too. A push compacts the remote once
@@ -52,12 +63,12 @@ find_bin() {
 rollout() {
     jq=$1
     payload=$2
-    path=$("$jq" -r '.transcript_path // empty' "$payload" 2>/dev/null || true)
+    path=$(posix_path "$("$jq" $JQ_FLAGS -r '.transcript_path // empty' "$payload" 2>/dev/null || true)")
     if [ -n "$path" ] && [ -r "$path" ]; then
         printf '%s\n' "$path"
         return 0
     fi
-    sid=$("$jq" -r '.session_id // empty' "$payload" 2>/dev/null || true)
+    sid=$("$jq" $JQ_FLAGS -r '.session_id // empty' "$payload" 2>/dev/null || true)
     [ -n "$sid" ] || return 1
     find "$CODEX_DIR/sessions" \( -name "rollout-*-$sid.jsonl" -o -name "rollout-*-${sid}_*.jsonl" \) \
         2>/dev/null | head -1
@@ -73,7 +84,7 @@ tag_hub_requests() {
 # The Codex version that wrote a rollout, from the session_meta record that opens it.
 agent_version() {
     [ -n "$2" ] && [ -r "$2" ] || return 0
-    head -n 5 "$2" | "$1" -rR 'fromjson? | select(.type == "session_meta") | .payload.cli_version // empty | strings' \
+    head -n 5 "$2" | "$1" $JQ_FLAGS -rR 'fromjson? | select(.type == "session_meta") | .payload.cli_version // empty | strings' \
         2>/dev/null | head -n 1
 }
 
@@ -176,6 +187,10 @@ worker() {
         log "convert ABORT: no spool recorded; re-run \`funes add codex\`."
         return
     fi
+    # A native Windows jq ends every line it writes with CRLF unless told `--binary`. No other jq
+    # writes one, and a jq before 1.7 may not take the flag, so only a jq seen writing CRLF is told.
+    JQ_FLAGS=
+    case $("$jq" -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
 
     src=$(rollout "$jq" "$payload" || true)
     tag_hub_requests "$(agent_version "$jq" "$src")"

@@ -13,6 +13,11 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT INT TERM
 
+# Read with the jq the converter runs, told `--binary` when it is a native Windows jq, as the
+# converter tells it.
+JQ_FLAGS=
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
+
 "$HERE/../convert" "$HERE/session.jsonl" "$out/got.funes.jsonl"
 if ! diff -u "$HERE/expected.funes.jsonl" "$out/got.funes.jsonl"; then
     echo "claude converter: output changed — see the diff above" >&2
@@ -30,7 +35,7 @@ all="u1 a1 q1 a2 a3 u2 q2 a4"
 without="u1 a1 a2 a3 u2 a4"
 check() {
     printf '%s\n' "$1" >"$out/rows"
-    got=$("$HERE/../convert" --indexed "$out/rows" "$HERE/queued.jsonl" | jq -r .turn_uuid | paste -s -d ' ' -)
+    got=$("$HERE/../convert" --indexed "$out/rows" "$HERE/queued.jsonl" | jq $JQ_FLAGS -r .turn_uuid | paste -s -d ' ' -)
     if [ "$got" != "$2" ]; then
         echo "claude converter: with the row \"$1\", the turns are $got, not $2" >&2
         exit 1
@@ -70,7 +75,7 @@ reply assistant text
 old-prompt user text
 EOF
 "$HERE/../convert" "$HERE/attribution.jsonl" \
-    | jq -r '[.turn_uuid, .role, (.blocks | map(.block_type + (if .tool_name then ":" + .tool_name else "" end)) | join(","))] | join(" ")' \
+    | jq $JQ_FLAGS -r '[.turn_uuid, .role, (.blocks | map(.block_type + (if .tool_name then ":" + .tool_name else "" end)) | join(","))] | join(" ")' \
     >"$out/got"
 if ! diff -u "$out/want" "$out/got"; then
     echo "claude converter: a turn has the wrong role or block type, see the diff above" >&2

@@ -11,9 +11,19 @@ PLUGIN_DIR="$PLUGIN_ROOT/plugins/funes"
 PLUGIN_ID="funes@huggingface"
 MARKETPLACE="huggingface"
 
+# A path as this shell spells it. Codex on Windows names a directory as Windows does, `C:\Users\…`,
+# which a `/` cannot split and which is not what `find` lists; Git's `cygpath` gives the spelling
+# `find` uses.
+posix_path() {
+    case $1 in
+    [A-Za-z]:[\\/]*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    esac
+    printf '%s\n' "$1"
+}
+
 # Where an install before the plugin put funes's files. Codex answers `CODEX_HOME` itself and its
 # default lands in `$HOME/.codex`, which is where that install wrote too.
-CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
+CODEX_DIR=$(posix_path "${CODEX_HOME:-$HOME/.codex}")
 
 # Where Codex keeps the plugin's data, `<plugin>-<marketplace>` under its home, and names to the
 # hooks as PLUGIN_DATA: what the hooks write, and the mark and rows the walk below shares with their
@@ -25,6 +35,11 @@ FUNES="${FUNES_BIN:-funes}"
 # HF_HUB_USER_AGENT_ORIGIN to its User-Agent. The registration is static, so the agent's version,
 # which the hooks add, is left out.
 MCP_ENV="HF_HUB_USER_AGENT_ORIGIN=funes; agent/codex"
+
+# A native Windows jq ends every line it writes with CRLF unless told `--binary`. No other jq writes
+# one, and a jq before 1.7 may not take the flag, so only a jq seen writing CRLF is told.
+JQ_FLAGS=
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
 
 usage() {
     echo "usage: setup add [MEMORY] | setup remove" >&2
@@ -56,6 +71,7 @@ require_jq() {
         echo "  Debian   sudo apt install jq" >&2
         echo "  Fedora   sudo dnf install jq" >&2
         echo "  Alpine   apk add jq" >&2
+        echo "  Windows  winget install jqlang.jq" >&2
         echo "Install it, then run \`funes add codex\` again." >&2
         exit 1
     fi
@@ -84,7 +100,7 @@ indexed() {
 last_turn() {
     sample="$2/${1##*/}"
     { head -n 1 "$1"; tail -n 32 "$1"; } >"$sample"
-    "$PLUGIN_DIR/convert" "$sample" | tail -n 1 | jq -r '"\(.session_id) \(.ts)"'
+    "$PLUGIN_DIR/convert" "$sample" | tail -n 1 | jq $JQ_FLAGS -r '"\(.session_id) \(.ts)"'
 }
 
 # Whether a session the rows `$1` list is missing from the rows `$2`: one the memory held at the
@@ -172,13 +188,13 @@ drop_pre_plugin_install() {
 prune_hooks() {
     config=$1
     command -v jq >/dev/null 2>&1 || return 1
-    pruned=$(jq '
+    pruned=$(jq $JQ_FLAGS '
         .hooks |= ((. // {})
             | with_entries(.value |= (
                 map(.hooks |= ((. // []) | map(select(((.command // "") | test("funes-(index|push)\\.sh")) | not))))
                 | map(select((.hooks | length) > 0))))
             | with_entries(select((.value | length) > 0)))' "$config") || return 1
-    if printf '%s\n' "$pruned" | jq -e '(.hooks | length) == 0 and (del(.hooks) | length) == 0' >/dev/null; then
+    if printf '%s\n' "$pruned" | jq $JQ_FLAGS -e '(.hooks | length) == 0 and (del(.hooks) | length) == 0' >/dev/null; then
         rm -f "$config"
     else
         printf '%s\n' "$pruned" >"$config.funes-tmp" && mv -f "$config.funes-tmp" "$config"

@@ -38,6 +38,16 @@ find_bin() {
     return 1
 }
 
+# A path as this shell spells it. Claude Code on Windows names a transcript as Windows does,
+# `C:\Users\…`, which a `/` cannot split and which is not what `find` lists; Git's `cygpath` gives
+# the spelling `find` uses.
+posix_path() {
+    case $1 in
+    [A-Za-z]:[\\/]*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    esac
+    printf '%s\n' "$1"
+}
+
 # One transcript into the spool, named after the session it belongs to, which is its own file stem,
 # and numbered as the memory holds it, from the rows `setup add` keeps beside this script. Fails
 # when the converter does.
@@ -66,7 +76,7 @@ tag_hub_requests() {
 # settle it.
 agent_version() {
     [ -n "$2" ] && [ -r "$2" ] || return 0
-    tail -n 20 "$2" | "$1" -rR 'fromjson? | .version // empty | strings' 2>/dev/null | tail -n 1
+    tail -n 20 "$2" | "$1" $JQ_FLAGS -rR 'fromjson? | .version // empty | strings' 2>/dev/null | tail -n 1
 }
 
 # The transcripts changed since the last sweep: sessions whose own hook never fired — untrusted,
@@ -81,7 +91,7 @@ convert_stale() {
     jq=$1
     named=$2
     stamp=$3
-    projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+    projects="$(posix_path "${CLAUDE_CONFIG_DIR:-$HOME/.claude}")/projects"
     [ -d "$projects" ] || return 0
     mark="$HERE/converted"
     since=$mark
@@ -154,13 +164,17 @@ worker() {
         log "convert ABORT: no spool recorded; re-run \`funes add claude\`."
         return
     fi
+    # A native Windows jq ends every line it writes with CRLF unless told `--binary`. No other jq
+    # writes one, and a jq before 1.7 may not take the flag, so only a jq seen writing CRLF is told.
+    JQ_FLAGS=
+    case $("$jq" -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
 
     # SubagentStop carries the sub-agent's own transcript in its own field; the session's is still
     # `transcript_path`. A reported bug fires the event for internal calls whose file never exists,
     # which `convert_one` skips.
-    agent_src=$("$jq" -r '.agent_transcript_path // empty' "$payload" 2>/dev/null || true)
-    src=$("$jq" -r '.transcript_path // empty' "$payload" 2>/dev/null || true)
-    named=${agent_src:-$src}
+    agent_src=$("$jq" $JQ_FLAGS -r '.agent_transcript_path // empty' "$payload" 2>/dev/null || true)
+    src=$("$jq" $JQ_FLAGS -r '.transcript_path // empty' "$payload" 2>/dev/null || true)
+    named=$(posix_path "${agent_src:-$src}")
     tag_hub_requests "$(agent_version "$jq" "$named")"
     # Stamped before anything is converted, the named transcript included: what is written while
     # this run reads, such as a sub-agent's last turns after its SubagentStop fired, is newer than

@@ -19,6 +19,11 @@ FUNES="${FUNES_BIN:-funes}"
 # which the hooks add, is left out.
 MCP_ENV="HF_HUB_USER_AGENT_ORIGIN=funes; agent/claude"
 
+# A native Windows jq ends every line it writes with CRLF unless told `--binary`. No other jq writes
+# one, and a jq before 1.7 may not take the flag, so only a jq seen writing CRLF is told.
+JQ_FLAGS=
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
+
 usage() {
     echo "usage: setup add [MEMORY] | setup remove" >&2
     exit 2
@@ -49,6 +54,7 @@ require_jq() {
         echo "  Debian   sudo apt install jq" >&2
         echo "  Fedora   sudo dnf install jq" >&2
         echo "  Alpine   apk add jq" >&2
+        echo "  Windows  winget install jqlang.jq" >&2
         echo "Install it, then run \`funes add claude\` again." >&2
         exit 1
     fi
@@ -78,7 +84,17 @@ indexed() {
 last_turn() {
     sample="$2/${1##*/}"
     tail -n 32 "$1" >"$sample"
-    "$PLUGIN_ROOT/funes/convert" "$sample" | tail -n 1 | jq -r '"\(.session_id) \(.ts)"'
+    "$PLUGIN_ROOT/funes/convert" "$sample" | tail -n 1 | jq $JQ_FLAGS -r '"\(.session_id) \(.ts)"'
+}
+
+# A path as this shell spells it. Claude Code on Windows names a directory as Windows does,
+# `C:\Users\…`, which a `/` cannot split and which is not what `find` lists; Git's `cygpath` gives
+# the spelling `find` uses.
+posix_path() {
+    case $1 in
+    [A-Za-z]:[\\/]*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    esac
+    printf '%s\n' "$1"
 }
 
 # Whether a session the rows `$1` list is missing from the rows `$2`: one the memory held at the
@@ -102,7 +118,7 @@ lost() {
 seed() {
     spool=$1
     # Claude Code keeps its transcripts under its config directory, which `CLAUDE_CONFIG_DIR` moves.
-    projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+    projects="$(posix_path "${CLAUDE_CONFIG_DIR:-$HOME/.claude}")/projects"
     [ -d "$projects" ] || return 0
     rows="$PLUGIN_ROOT/funes/scripts/indexed"
     mark="$PLUGIN_ROOT/funes/scripts/converted"

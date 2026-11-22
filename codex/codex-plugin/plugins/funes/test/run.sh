@@ -10,6 +10,11 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT INT TERM
 
+# Read with the jq the converter runs, told `--binary` when it is a native Windows jq, as the
+# converter tells it.
+JQ_FLAGS=
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
+
 "$HERE/../convert" "$HERE/session.jsonl" "$out/got.funes.jsonl"
 if ! diff -u "$HERE/expected.funes.jsonl" "$out/got.funes.jsonl"; then
     echo "codex converter: output changed — see the diff above" >&2
@@ -32,7 +37,7 @@ cat >"$out/want" <<'EOF'
 5 user
 6 user
 EOF
-"$HERE/../convert" "$HERE/attribution.jsonl" | jq -r '"\(.seq) \(.role)"' >"$out/got"
+"$HERE/../convert" "$HERE/attribution.jsonl" | jq $JQ_FLAGS -r '"\(.seq) \(.role)"' >"$out/got"
 if ! diff -u "$out/want" "$out/got"; then
     echo "codex converter: a turn has the wrong role, see the diff above" >&2
     exit 1
