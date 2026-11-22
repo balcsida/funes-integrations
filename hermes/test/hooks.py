@@ -26,7 +26,8 @@ tmp = tempfile.mkdtemp(prefix="funes-hermes-hooks-")
 # through it.
 shims = os.path.join(tmp, "shims")
 os.makedirs(shims)
-with open(os.path.join(shims, "bash"), "w", encoding="utf-8") as f:
+# Scripts are written with `\n`, which `sh` reads: Windows would end each line with CRLF.
+with open(os.path.join(shims, "bash"), "w", encoding="utf-8", newline="\n") as f:
     f.write("#!/bin/sh\nexit 127\n")
 os.chmod(os.path.join(shims, "bash"), 0o755)
 os.environ["PATH"] = shims + os.pathsep + os.environ.get("PATH", "")
@@ -44,7 +45,7 @@ for name, value in (("spool", spool), ("state-db", db), ("memory", "acme/kb")):
         f.write(value + "\n")
 log = os.path.join(tmp, "worker.log")
 script = os.path.join(dest, "funes-index.sh")
-with open(script, "w", encoding="utf-8") as f:
+with open(script, "w", encoding="utf-8", newline="\n") as f:
     f.write(f"#!/bin/sh\nprintf '%s: %s\\n' \"${{HF_HUB_USER_AGENT_ORIGIN:-}}\" \"$*\" >>\"{log}\"\n")
 os.chmod(script, 0o755)
 
@@ -83,6 +84,7 @@ if not os.path.isfile(os.path.join(spool, "20260101_000000_fixture.funes.jsonl")
 for fn in hooks["on_session_finalize"]:
     fn()
 
+# Two detached launches, which nothing orders: both are recorded, in whichever order they ran.
 deadline = time.time() + 10
 origin = "funes; agent/hermes; agent_version/9.9.9"
 expected = f"{origin}: \n{origin}: --publish\n"
@@ -92,7 +94,7 @@ while True:
             got = f.read()
     except OSError:
         got = ""
-    if got == expected:
+    if got.endswith("\n") and sorted(got.splitlines()) == sorted(expected.splitlines()):
         break
     if time.time() > deadline:
         fail(f"the index script was launched with {got!r}, expected {expected!r}")

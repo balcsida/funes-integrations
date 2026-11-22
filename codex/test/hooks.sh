@@ -23,7 +23,11 @@ printf '%s: %s\n' "${HF_HUB_USER_AGENT_ORIGIN:-}" "$*" >>"$FUNES_TEST_CLI_LOG"
 [ "$1" != index ] || [ ! -e "$FUNES_TEST_CLI_LOG.busy" ] || exit 75
 FAKE
 chmod +x "$tmp/bin/funes"
-export PATH="$tmp/bin:/usr/bin:/bin"
+# The jq of the caller's PATH stays on this one, wherever the box keeps it: Windows does not keep it
+# in /usr/bin. A native Windows jq is read as the bundle reads it, told `--binary`.
+jq=$(command -v jq) || fail "jq is not on PATH"
+export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # The origin comes from the scripts, not from whoever ran the test.
 unset HF_HUB_USER_AGENT_ORIGIN
@@ -230,6 +234,24 @@ tick
 fire
 [ -f "$spool/rollout-x.funes.jsonl" ] ||
     fail "a rollout whose conversion failed was never converted again"
+
+# Codex on Windows names the rollout and the plugin's data as Windows does, `C:\Users\…`: the rollout
+# is converted under its own stem, once, though the sweep lists it as the shell spells it, and the
+# run moves the mark. A name the hook could not split would fail its conversion and hold the mark
+# back, so every turn after swept everything since. Only Windows has the spelling to test.
+if command -v cygpath >/dev/null 2>&1; then
+    tick
+    rollout rollout-w.jsonl
+    : >"$data/funes-sync.log"
+    touch -t 202001010000 "$data/converted"
+    printf '{"transcript_path":"%s","session_id":"w"}' "$(cygpath -w "$tree/rollout-w.jsonl" | sed 's/\\/\\\\/g')" >"$tmp/payload"
+    PLUGIN_DATA=$(cygpath -w "$data") sh "$scripts/funes-index.sh" --worker "$tmp/payload"
+    log=$(cat "$data/funes-sync.log")
+    [ -f "$spool/rollout-w.funes.jsonl" ] || fail "a rollout Windows named was not converted: $log"
+    if grep -q 'convert: FAILED' "$data/funes-sync.log"; then fail "a conversion failed: $log"; fi
+    [ "$(grep -c 'convert: rollout-w$' "$data/funes-sync.log")" = 1 ] || fail "a rollout Windows named was converted more than once: $log"
+    [ "$data/converted" -nt "$tree/rollout-w.jsonl" ] || fail "a run on a rollout Windows named left the mark where it was"
+fi
 
 # A run Codex hands no directory keeps its state where Codex has the plugin's data, which is where
 # the walk `setup add` makes leaves the mark the sweeps share.

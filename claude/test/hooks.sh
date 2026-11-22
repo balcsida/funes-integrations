@@ -23,7 +23,11 @@ printf '%s: %s\n' "${HF_HUB_USER_AGENT_ORIGIN:-}" "$*" >>"$FUNES_TEST_CLI_LOG"
 [ "$1" != index ] || [ ! -e "$FUNES_TEST_CLI_LOG.busy" ] || exit 75
 FAKE
 chmod +x "$tmp/bin/funes"
-export PATH="$tmp/bin:/usr/bin:/bin"
+# The jq of the caller's PATH stays on this one, wherever the box keeps it: Windows does not keep it
+# in /usr/bin. A native Windows jq is read as the bundle reads it, told `--binary`.
+jq=$(command -v jq) || fail "jq is not on PATH"
+export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # funes and the agent are named after an origin the user set.
 export HF_HUB_USER_AGENT_ORIGIN=mine
@@ -234,6 +238,24 @@ rm "$ctl/x.fail"
 tick
 fire
 [ -f "$spool/x.funes.jsonl" ] || fail "a session whose conversion failed was never converted again"
+
+# Claude Code on Windows names the transcript as Windows does, `C:\Users\…`: it is converted under
+# its own stem, once, though the sweep lists it as the shell spells it, and the run moves the mark.
+# A name the hook could not split would fail its conversion and hold the mark back, so every turn
+# after swept everything since. Only Windows has the spelling to test.
+if command -v cygpath >/dev/null 2>&1; then
+    tick
+    transcript w.jsonl
+    : >"$scripts/funes-sync.log"
+    touch -t 202001010000 "$scripts/converted"
+    printf '{"transcript_path":"%s"}' "$(cygpath -w "$tree/w.jsonl" | sed 's/\\/\\\\/g')" >"$tmp/payload"
+    sh "$scripts/funes-index.sh" --worker "$tmp/payload"
+    log=$(cat "$scripts/funes-sync.log")
+    [ -f "$spool/w.funes.jsonl" ] || fail "a transcript Windows named was not converted: $log"
+    if grep -q 'convert: FAILED' "$scripts/funes-sync.log"; then fail "a conversion failed: $log"; fi
+    [ "$(grep -c 'convert: w$' "$scripts/funes-sync.log")" = 1 ] || fail "a transcript Windows named was converted more than once: $log"
+    [ "$scripts/converted" -nt "$tree/w.jsonl" ] || fail "a run on a transcript Windows named left the mark where it was"
+fi
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.

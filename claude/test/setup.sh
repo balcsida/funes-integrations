@@ -21,7 +21,11 @@ cat >"$tmp/bin/claude" <<'FAKE'
 printf '%s\n' "$*" >>"$FUNES_TEST_CLI_LOG"
 FAKE
 chmod +x "$tmp/bin/claude"
-export PATH="$tmp/bin:/usr/bin:/bin"
+# The jq of the caller's PATH stays on this one, wherever the box keeps it: Windows does not keep it
+# in /usr/bin. A native Windows jq is read as the bundle reads it, told `--binary`.
+jq=$(command -v jq) || fail "jq is not on PATH"
+export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 export FUNES_BIN=funes FUNES_HOME="$HOME/.funes" FUNES_AGENT_ID=claude
 # Claude Code's transcripts live under its config directory, wherever the user put it: the
@@ -160,15 +164,24 @@ age_mark
 "$setup" add acme/kb >/dev/null
 [ -f "$older" ] || fail "a session gone from the memory left the transcripts older than the mark unread"
 
-# A conversion that fails leaves the mark where it was, and no stamp behind.
+# A conversion that fails leaves the mark where it was, and no stamp behind. The converter fails on
+# one transcript: `chmod 0` cannot make a file unreadable to root, nor on Windows.
+mv "$plugin/funes/convert" "$plugin/funes/convert.real"
+cat >"$plugin/funes/convert" <<WRAP
+#!/bin/sh
+for arg; do out=\$arg; done
+case \$out in */unreadable.funes.jsonl) exit 1 ;; esac
+exec sh "$plugin/funes/convert.real" "\$@"
+WRAP
+chmod +x "$plugin/funes/convert"
 printf '{}\n' >"$tree/unreadable.jsonl"
-chmod 0 "$tree/unreadable.jsonl"
 touch -t 202601020000 "$tmp/then"
 listing "$last"
 age_mark
 "$setup" add acme/kb >/dev/null 2>&1
 [ ! "$mark" -nt "$tmp/then" ] || fail "a failed conversion moved the mark"
 [ -z "$(find "$plugin/funes/scripts" -name 'converted.*')" ] || fail "the walk left its stamp behind"
+mv -f "$plugin/funes/convert.real" "$plugin/funes/convert"
 rm -f "$tree/unreadable.jsonl"
 
 # A funes before 1.9.0 opens a row on its day alone, with no stamp to tell how a session it lists
