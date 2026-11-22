@@ -54,9 +54,12 @@ Codex's own rollouts are untouched.
 - `codex` on `PATH`, with plugins; without it the files are installed and the commands to register
   them printed.
 - A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
-  macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`.
+  macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`, and on
+  Windows `winget install jqlang.jq`.
   `funes add codex` checks that the jq on PATH converts a rollout the way funes reads it before it
   installs anything.
+- On Windows, [Git for Windows](https://gitforwindows.org): funes runs `setup` with its shell, and
+  the hooks' command is `sh …`, which needs that shell on the `PATH` Codex runs it with.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
