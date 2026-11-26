@@ -28,6 +28,10 @@ chmod +x "$tmp/bin/funes"
 jq=$(command -v jq) || fail "jq is not on PATH"
 export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
 case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
+# The PATH a hook gets on Windows when its shell is started from a native program: in Windows' own
+# order, System32, whose `find` is a text search, ahead of Git's tools. Elsewhere the PATH as it is.
+native=$PATH
+[ ! -x /usr/bin/cygpath ] || native="$(cygpath -u -S):$PATH"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # funes and the agent are named after an origin the user set.
 export HF_HUB_USER_AGENT_ORIGIN=mine
@@ -80,7 +84,7 @@ transcript() { cat "$fixture" >"$tree/$1"; }
 # boundary. The payload names `a.jsonl` unless told another. The worker takes the file with it.
 fire() {
     printf '{"transcript_path":"%s"}' "$tree/${2:-a.jsonl}" >"$tmp/payload"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
     [ ! -e "$tmp/payload" ] || fail "the worker left the payload's file"
 }
 # Filesystems stamp to the second at worst, and `find -newer` compares stamps.
@@ -88,7 +92,7 @@ tick() { sleep 2; }
 # A worker in the background, its payload naming the transcript `$1`.
 fire_in_background() {
     printf '{"transcript_path":"%s"}' "$tree/$1" >"$tmp/payload-$1"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
 }
 # Wait for a file a background worker creates, as long as a conversion could take.
 await() {

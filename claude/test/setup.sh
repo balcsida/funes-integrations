@@ -26,6 +26,11 @@ chmod +x "$tmp/bin/claude"
 jq=$(command -v jq) || fail "jq is not on PATH"
 export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
 case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
+# The PATH funes hands `setup` on Windows, where it starts Git's shell from a native program: in
+# Windows' own order, System32, whose `find` is a text search, ahead of Git's tools. Elsewhere the
+# PATH as it is.
+native=$PATH
+[ ! -x /usr/bin/cygpath ] || native="$(cygpath -u -S):$PATH"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 export FUNES_BIN=funes FUNES_HOME="$HOME/.funes" FUNES_AGENT_ID=claude
 # Claude Code's transcripts live under its config directory, wherever the user put it: the
@@ -60,7 +65,7 @@ run_script='sh "${CLAUDE_PLUGIN_ROOT}/scripts/funes-index.sh"'
 : >"$plugin/funes/scripts/indexed"
 : >"$plugin/funes/scripts/swept"
 : >"$plugin/funes/scripts/converted"
-"$setup" add acme/kb >"$tmp/add.out"
+PATH=$native "$setup" add acme/kb >"$tmp/add.out"
 grep -q "installed funes into Claude Code" "$tmp/add.out" || fail "add did not report: $(cat "$tmp/add.out")"
 [ -f "$plugin/.claude-plugin/marketplace.json" ] || fail "no marketplace manifest"
 [ -f "$plugin/funes/.claude-plugin/plugin.json" ] || fail "no plugin manifest"

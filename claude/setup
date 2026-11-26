@@ -4,6 +4,11 @@
 # boundaries. funes never edits the user's settings.json.
 set -eu
 
+# Git for Windows' shell, started from a native program, keeps Windows' PATH order, which puts
+# System32, whose `find` is a text search, ahead of Git's own tools: those go first. Only such a
+# shell has /usr/bin/cygpath.
+[ ! -x /usr/bin/cygpath ] || PATH="/usr/bin:$PATH"
+
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PLUGIN_ROOT="$HERE/claude-plugin"
 PLUGIN_ID="funes@huggingface"

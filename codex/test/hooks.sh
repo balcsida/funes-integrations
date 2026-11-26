@@ -28,6 +28,11 @@ chmod +x "$tmp/bin/funes"
 jq=$(command -v jq) || fail "jq is not on PATH"
 export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
 case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
+# The PATH a hook gets on Windows, where Codex starts Git's shell from a native program: in
+# Windows' own order, System32, whose `find` is a text search, ahead of Git's tools. Elsewhere the
+# PATH as it is.
+native=$PATH
+[ ! -x /usr/bin/cygpath ] || native="$(cygpath -u -S):$PATH"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # The origin comes from the scripts, not from whoever ran the test.
 unset HF_HUB_USER_AGENT_ORIGIN
@@ -86,7 +91,7 @@ rollout() { cat "$fixture" >"$tree/$1"; }
 # it.
 fire() {
     printf '{"transcript_path":"%s","session_id":"s"}' "$tree/${2:-rollout-a.jsonl}" >"$tmp/payload"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
     [ ! -e "$tmp/payload" ] || fail "the worker left the payload's file"
 }
 # Filesystems stamp to the second at worst, and `find -newer` compares stamps.
@@ -94,7 +99,7 @@ tick() { sleep 2; }
 # A worker in the background, its payload naming the rollout `$1`.
 fire_in_background() {
     printf '{"transcript_path":"%s","session_id":"s"}' "$tree/$1" >"$tmp/payload-$1"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
 }
 # Wait for a file a background worker creates, as long as a conversion could take.
 await() {
