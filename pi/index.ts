@@ -30,7 +30,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { delimiter, dirname, join, resolve, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { convertLive, convertTree } from "./convert.mjs";
 
@@ -215,29 +215,34 @@ const funes = new FunesMcp();
 // the spool `funes add pi` recorded; a run from a checkout has none, and spawns nothing.
 const INDEX_SH = join(HERE, "scripts", "funes-index.sh");
 
-// The `sh` to run the automation with: the one on PATH, the one shell a box running pi is promised —
-// except on Windows, where pi's own shell is Git for Windows', which need not be on PATH: it is taken
-// from beside the `git` on PATH, or from where Git's installer puts it.
-function sh(): string {
+// The `sh` to run the automation with: the one shell a box running pi is promised, except on
+// Windows, where pi's own shell is Git for Windows', which need not be on PATH. There it is the first
+// `sh.exe` in a directory PATH names, else Git's — beside the `git.exe` in one, or where its
+// installer puts it — and none when there is none. Only directories named in full are searched: the
+// current one, which Windows searches first, is the project pi runs in, and an `sh.exe` there is no
+// shell to run.
+function sh(): string | undefined {
   if (process.platform !== "win32") return "sh";
-  const dirs = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const dirs = (process.env.PATH ?? "").split(delimiter).filter((dir) => isAbsolute(dir));
   const onPath = dirs.map((dir) => join(dir, "sh.exe"));
   const besideGit = dirs.filter((dir) => existsSync(join(dir, "git.exe"))).map((dir) => join(dir, "..", "bin", "sh.exe"));
   const installed = ["ProgramFiles", "ProgramW6432", "LOCALAPPDATA"]
     .map((base) => process.env[base])
-    .filter((base): base is string => Boolean(base))
+    .filter((base): base is string => Boolean(base) && isAbsolute(base))
     .flatMap((base) => [join(base, "Git", "bin", "sh.exe"), join(base, "Programs", "Git", "bin", "sh.exe")]);
-  return [...onPath, ...besideGit, ...installed].find((candidate) => existsSync(candidate)) ?? "sh";
+  return [...onPath, ...besideGit, ...installed].find((candidate) => existsSync(candidate));
 }
 
-// Run the automation detached and forget it: no failure of its is worth disturbing the session with.
-// On Windows the script is named with `/`, which a shell does not take for an escape, and the worker,
-// detached, would get a console window of its own to show.
+// Run the automation detached and forget it: no failure of its is worth disturbing the session with,
+// nor the want of a shell to run it. On Windows the script is named with `/`, which a shell does not
+// take for an escape, and the worker, detached, would get a console window of its own to show.
 function runScript(script: string, ...args: string[]) {
   if (!SPOOL || !existsSync(script)) return;
+  const shell = sh();
+  if (!shell) return;
   try {
     const path = process.platform === "win32" ? script.replaceAll("\\", "/") : script;
-    const child = spawn(sh(), [path, ...args], { env: funesEnv(), detached: true, stdio: "ignore", windowsHide: true });
+    const child = spawn(shell, [path, ...args], { env: funesEnv(), detached: true, stdio: "ignore", windowsHide: true });
     child.on("error", () => {});
     child.unref();
   } catch {}

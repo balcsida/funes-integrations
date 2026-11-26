@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -85,10 +85,13 @@ function install(root, { memory = "", pending = false } = {}) {
   const wrapped = source.replace('from "node:child_process"', 'from "./child-process.mjs"');
   assert.notEqual(wrapped, source, "the extension's spawn import was not wrapped");
   writeFileSync(index, wrapped);
+  // It records each command it is handed, when the test names a file to record them in.
   writeFileSync(join(ext, "child-process.mjs"), `
 import { spawn as realSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { appendFileSync } from "node:fs";
 export function spawn(command, ...args) {
+  if (process.env.FUNES_TEST_SPAWNED) appendFileSync(process.env.FUNES_TEST_SPAWNED, command + "\\n");
   if (/[\\\\/]no-pipes$/.test(command)) {
     const child = new EventEmitter();
     queueMicrotask(() => child.emit("error", new Error("spawn EMFILE")));
@@ -285,4 +288,45 @@ for (const [missing, error] of [["missing-funes", "ENOENT"], ["no-pipes", "EMFIL
   const got = await turn(root, join(custom, "a.jsonl"), join(custom, "b.jsonl"), join(root, "other/x.jsonl"));
   if (!got.named || !got.stale) throw new Error(`elsewhere: expected both sessions converted, got ${JSON.stringify(got)}`);
   if (got.foreign) throw new Error("elsewhere: a file above the session's directory was converted");
+}
+// On Windows the worker's shell comes from a directory PATH names in full, or from Git's install,
+// never from the project pi runs in, which Windows searches first: not one in a directory PATH
+// names relative to it. With no shell anywhere, no worker is started.
+if (process.platform === "win32") {
+  const saved = { ...process.env };
+  const cwd = process.cwd();
+  const root = scratch("funes-pi-turn-");
+  const project = join(root, "project");
+  mkdirSync(join(project, "bin"), { recursive: true });
+  writeFileSync(join(project, "bin", "sh.exe"), "");
+  const spawned = join(root, "spawned");
+  // The shells the extension spawned: every command but funes.
+  const shells = () => readFileSync(spawned, "utf8").split("\n").filter((command) => command && command !== process.env.FUNES_BIN);
+  process.env.FUNES_TEST_SPAWNED = spawned;
+  // As Windows has it by default: a lookup by bare name searches the current directory first.
+  delete process.env.NoDefaultCurrentDirectoryInExePath;
+  process.chdir(project);
+  try {
+    process.env.PATH = `bin${delimiter}${saved.PATH}`;
+    const sessions = join(root, "sessions");
+    await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"));
+    const taken = shells().filter((shell) => !isAbsolute(shell) || shell.toLowerCase().startsWith(project.toLowerCase()));
+    if (taken.length) throw new Error(`the worker's shell was taken from the project: ${taken}`);
+
+    const bare = scratch("funes-pi-turn-");
+    const { ext } = install(bare);
+    process.env.FUNES_BIN = fakeFunes(bare);
+    const handlers = await activate(ext);
+    writeFileSync(spawned, "");
+    const empty = join(bare, "empty");
+    mkdirSync(empty);
+    for (const name of ["PATH", "ProgramFiles", "ProgramW6432", "LOCALAPPDATA"]) process.env[name] = empty;
+    const named = session(join(bare, "sessions", "--Users-me-repo--"), "a.jsonl");
+    await handlers.turn_end({}, { sessionManager: { getSessionFile: () => named } });
+    if (shells().length) throw new Error(`with no shell anywhere, spawned ${shells()}`);
+  } finally {
+    process.chdir(cwd);
+    for (const name of Object.keys(process.env)) delete process.env[name];
+    Object.assign(process.env, saved);
+  }
 }

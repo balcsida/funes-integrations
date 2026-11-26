@@ -100,6 +100,36 @@ while True:
         fail(f"the index script was launched with {got!r}, expected {expected!r}")
     time.sleep(0.05)
 
+# On Windows the shell comes from a directory PATH names in full, or from Git's install, never from
+# the project hermes runs in, which Windows searches first: not a shell planted there, nor one in a
+# directory PATH names relative to it. With no shell anywhere, there is none to start.
+if os.name == "nt":
+    project = os.path.join(tmp, "project")
+    os.makedirs(os.path.join(project, "bin"))
+    for planted in ("sh.bat", "sh.cmd", "sh.exe", os.path.join("bin", "sh.exe")):
+        with open(os.path.join(project, planted), "w", encoding="utf-8") as f:
+            f.write("@echo off\n")
+    saved_env, saved_cwd = dict(os.environ), os.getcwd()
+    os.chdir(project)
+    try:
+        # As Windows has it by default: a lookup by bare name searches the current directory first.
+        os.environ.pop("NoDefaultCurrentDirectoryInExePath", None)
+        for path in (saved_env["PATH"], "bin" + os.pathsep + saved_env["PATH"]):
+            os.environ["PATH"] = path
+            sh = plugin._sh()
+            if not sh or os.path.abspath(sh).lower().startswith(project.lower()):
+                fail(f"the shell was taken from the project: {sh!r}")
+        empty = os.path.join(tmp, "empty")
+        os.makedirs(empty)
+        for name in ("PATH", "ProgramFiles", "ProgramW6432", "LOCALAPPDATA"):
+            os.environ[name] = empty
+        if plugin._sh() is not None:
+            fail(f"with no shell anywhere, took {plugin._sh()!r}")
+    finally:
+        os.chdir(saved_cwd)
+        os.environ.clear()
+        os.environ.update(saved_env)
+
 # A shell that cannot be started costs the run, never an exception in hermes, at a turn or at
 # either boundary.
 plugin._sh = lambda: os.path.join(tmp, "no-such-shell", "sh")

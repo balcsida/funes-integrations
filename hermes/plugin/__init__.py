@@ -8,7 +8,6 @@ the memory it was handed. With none, the file is absent, and the publish hooks a
 """
 
 import os
-import shutil
 import subprocess
 import time
 
@@ -85,31 +84,33 @@ def _convert_stale(named):
 
 
 def _sh():
-    """The `sh` to run the scripts with: the one on PATH, the one shell a box running hermes is
-    promised — except on Windows, which has none of its own, where Git for Windows' is taken from
-    beside the `git` on PATH, or from where its installer puts it."""
-    found = shutil.which("sh")
-    if found or os.name != "nt":
-        return found or "sh"
-    roots = []
-    git = shutil.which("git")
-    if git:
-        roots.append(os.path.dirname(os.path.dirname(git)))
+    """The `sh` to run the scripts with: the one shell a box running hermes is promised, except on
+    Windows, which has none of its own. There it is the first `sh.exe` in a directory PATH names,
+    else Git for Windows' — beside the `git.exe` in one, or where its installer puts it — and None
+    when there is none. Only directories named in full are searched: the current one, which Windows
+    searches first, is the project hermes runs in, and a `sh.bat` there is no shell to run."""
+    if os.name != "nt":
+        return "sh"
+    dirs = [os.path.normpath(d) for d in os.environ.get("PATH", "").split(os.pathsep) if os.path.isabs(d)]
+    candidates = [os.path.join(d, "sh.exe") for d in dirs]
+    candidates += [
+        os.path.join(os.path.dirname(d), "bin", "sh.exe") for d in dirs if os.path.isfile(os.path.join(d, "git.exe"))
+    ]
     for base in ("ProgramFiles", "ProgramW6432", "LOCALAPPDATA"):
-        if os.environ.get(base):
-            roots += [os.path.join(os.environ[base], "Git"), os.path.join(os.environ[base], "Programs", "Git")]
-    for root in roots:
-        candidate = os.path.join(root, "bin", "sh.exe")
-        if os.path.isfile(candidate):
-            return candidate
-    return "sh"
+        root = os.environ.get(base)
+        if root and os.path.isabs(root):
+            candidates += [os.path.join(root, "Git", "bin", "sh.exe"), os.path.join(root, "Programs", "Git", "bin", "sh.exe")]
+    return next((c for c in candidates if os.path.isfile(c)), None)
 
 
 def _spawn(script, *args):
     """Run `script` detached and forget it, through `sh`. On Windows the script is named with `/`,
     which a shell does not take for an escape, and the worker gets no console window to show. A
-    hook must never raise into hermes, so a shell that cannot be started costs the run and nothing
-    else."""
+    hook must never raise into hermes, so a shell that cannot be started, or none to start, costs
+    the run and nothing else."""
+    sh = _sh()
+    if not sh:
+        return
     env = dict(os.environ, HF_HUB_USER_AGENT_ORIGIN=_hub_origin())
     path = os.path.join(HERE, script)
     detach = {"start_new_session": True}
@@ -118,7 +119,7 @@ def _spawn(script, *args):
         detach = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
     try:
         subprocess.Popen(
-            [_sh(), path, *args],
+            [sh, path, *args],
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
