@@ -107,21 +107,26 @@ def _sh():
 
 def _spawn(script, *args):
     """Run `script` detached and forget it, through `sh`. On Windows the script is named with `/`,
-    which a shell does not take for an escape, and the worker gets no console window to show."""
+    which a shell does not take for an escape, and the worker gets no console window to show. A
+    hook must never raise into hermes, so a shell that cannot be started costs the run and nothing
+    else."""
     env = dict(os.environ, HF_HUB_USER_AGENT_ORIGIN=_hub_origin())
     path = os.path.join(HERE, script)
     detach = {"start_new_session": True}
     if os.name == "nt":
         path = path.replace("\\", "/")
         detach = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
-    subprocess.Popen(
-        [_sh(), path, *args],
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        **detach,
-    )
+    try:
+        subprocess.Popen(
+            [_sh(), path, *args],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **detach,
+        )
+    except OSError:
+        pass
 
 
 def _on_turn(**kwargs):

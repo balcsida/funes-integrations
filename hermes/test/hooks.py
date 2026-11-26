@@ -99,5 +99,15 @@ while True:
     if time.time() > deadline:
         fail(f"the index script was launched with {got!r}, expected {expected!r}")
     time.sleep(0.05)
+
+# A shell that cannot be started costs the run, never an exception in hermes, at a turn or at
+# either boundary.
+plugin._sh = lambda: os.path.join(tmp, "no-such-shell", "sh")
+try:
+    for event in ("post_llm_call", "on_session_start", "on_session_finalize"):
+        for fn in hooks[event]:
+            fn(session_id="20260101_000000_fixture")
+except OSError as e:
+    fail(f"a hook raised into hermes: {e!r}")
 shutil.rmtree(tmp)
 print("hermes hooks: ok")
