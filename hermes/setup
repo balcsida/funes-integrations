@@ -42,8 +42,9 @@ seed() {
     if py=$(find_python); then
         "$py" "$dest/convert.py" "$db" "$spool" >/dev/null
     else
-        echo "no python3 on PATH to convert your existing hermes sessions — hermes runs on it, so" \
-            "this is unexpected; they will be converted as each session ends." >&2
+        echo "no Python with sqlite3 on PATH, as python3 or python, to convert your existing hermes" \
+            "sessions — hermes runs on one, so this is unexpected; they will be converted as each" \
+            "session ends." >&2
     fi
 }
 
