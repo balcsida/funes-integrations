@@ -303,40 +303,43 @@ if (process.platform === "win32") {
 // never from the project pi runs in, which Windows searches first: not one in a directory PATH
 // names relative to it. With no shell anywhere, no worker is started.
 if (process.platform === "win32") {
-  const saved = { ...process.env };
-  const cwd = process.cwd();
-  const root = scratch("funes-pi-turn-");
-  const project = join(root, "project");
+  const project = join(scratch("funes-pi-project-"), "project");
   mkdirSync(join(project, "bin"), { recursive: true });
   writeFileSync(join(project, "bin", "sh.exe"), "");
-  const spawned = join(root, "spawned");
-  // The shells the extension spawned: every command but funes.
-  const shells = () => readFileSync(spawned, "utf8").split("\n").filter((command) => command && command !== process.env.FUNES_BIN);
-  process.env.FUNES_TEST_SPAWNED = spawned;
-  // As Windows has it by default: a lookup by bare name searches the current directory first.
-  delete process.env.NoDefaultCurrentDirectoryInExePath;
-  process.chdir(project);
-  try {
-    process.env.PATH = `bin${delimiter}${saved.PATH}`;
-    const sessions = join(root, "sessions");
-    await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"));
-    const taken = shells().filter((shell) => !isAbsolute(shell) || shell.toLowerCase().startsWith(project.toLowerCase()));
-    if (taken.length) throw new Error(`the worker's shell was taken from the project: ${taken}`);
-
-    const bare = scratch("funes-pi-turn-");
-    const { ext } = install(bare);
-    process.env.FUNES_BIN = fakeFunes(bare);
+  // A turn in the project, under `environment`, returning the commands the extension spawned and
+  // its worker's log. The extension is loaded, and its fake funes started, before: the fake's
+  // launcher looks `sh` up as Windows does, and would run into the planted one.
+  async function turnInProject(environment) {
+    const root = scratch("funes-pi-turn-");
+    const { ext, log } = install(root);
+    process.env.FUNES_BIN = fakeFunes(root);
     const handlers = await activate(ext);
+    const named = session(join(root, "sessions", "--Users-me-repo--"), "a.jsonl");
+    const spawned = join(root, "spawned");
     writeFileSync(spawned, "");
-    const empty = join(bare, "empty");
-    mkdirSync(empty);
-    for (const name of ["PATH", "ProgramFiles", "ProgramW6432", "LOCALAPPDATA"]) process.env[name] = empty;
-    const named = session(join(bare, "sessions", "--Users-me-repo--"), "a.jsonl");
-    await handlers.turn_end({}, { sessionManager: { getSessionFile: () => named } });
-    if (shells().length) throw new Error(`with no shell anywhere, spawned ${shells()}`);
-  } finally {
-    process.chdir(cwd);
-    for (const name of Object.keys(process.env)) delete process.env[name];
-    Object.assign(process.env, saved);
+    const saved = { ...process.env };
+    const cwd = process.cwd();
+    process.env.FUNES_TEST_SPAWNED = spawned;
+    // As Windows has it by default: a lookup by bare name searches the current directory first.
+    delete process.env.NoDefaultCurrentDirectoryInExePath;
+    Object.assign(process.env, environment);
+    process.chdir(project);
+    try {
+      await handlers.turn_end({}, { sessionManager: { getSessionFile: () => named } });
+    } finally {
+      process.chdir(cwd);
+      for (const name of Object.keys(process.env)) delete process.env[name];
+      Object.assign(process.env, saved);
+    }
+    return { shells: readFileSync(spawned, "utf8").split("\n").filter(Boolean), log };
   }
+
+  const planted = await turnInProject({ PATH: `bin${delimiter}${process.env.PATH}` });
+  const taken = planted.shells.filter((shell) => !isAbsolute(shell) || shell.toLowerCase().startsWith(project.toLowerCase()));
+  if (taken.length) throw new Error(`the worker's shell was taken from the project: ${taken}`);
+  await workerLog(planted.log, "the turn in the project");
+
+  const empty = scratch("funes-pi-empty-");
+  const none = await turnInProject({ PATH: empty, ProgramFiles: empty, ProgramW6432: empty, LOCALAPPDATA: empty });
+  if (none.shells.length) throw new Error(`with no shell anywhere, spawned ${none.shells}`);
 }
