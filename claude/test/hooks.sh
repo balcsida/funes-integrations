@@ -243,22 +243,27 @@ tick
 fire
 [ -f "$spool/x.funes.jsonl" ] || fail "a session whose conversion failed was never converted again"
 
-# Claude Code on Windows names the transcript as Windows does, `C:\Users\…`: it is converted under
-# its own stem, once, though the sweep lists it as the shell spells it, and the run moves the mark.
-# A name the hook could not split would fail its conversion and hold the mark back, so every turn
-# after swept everything since. Only Windows has the spelling to test.
+# Claude Code on Windows names the transcript as Windows does, `C:\Users\…`, or led by `\\` when it
+# lives on a share, `\\server\share\…`, or is spelled verbatim, `\\?\C:\Users\…`: it is converted
+# under its own stem, once, though the sweep lists it as the shell spells it, and the run moves the
+# mark. A name the hook could not split would fail its conversion and hold the mark back, so every
+# turn after swept everything since. Only Windows has the spellings to test; the verbatim one stands
+# for a share, which a runner may not serve.
 if command -v cygpath >/dev/null 2>&1; then
-    tick
-    transcript w.jsonl
-    : >"$scripts/funes-sync.log"
-    touch -t 202001010000 "$scripts/converted"
-    printf '{"transcript_path":"%s"}' "$(cygpath -w "$tree/w.jsonl" | sed 's/\\/\\\\/g')" >"$tmp/payload"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload"
-    log=$(cat "$scripts/funes-sync.log")
-    [ -f "$spool/w.funes.jsonl" ] || fail "a transcript Windows named was not converted: $log"
-    if grep -q 'convert: FAILED' "$scripts/funes-sync.log"; then fail "a conversion failed: $log"; fi
-    [ "$(grep -c 'convert: w$' "$scripts/funes-sync.log")" = 1 ] || fail "a transcript Windows named was converted more than once: $log"
-    [ "$scripts/converted" -nt "$tree/w.jsonl" ] || fail "a run on a transcript Windows named left the mark where it was"
+    for lead in '' '\\?\'; do
+        tick
+        transcript w.jsonl
+        rm -f "$spool/w.funes.jsonl"
+        : >"$scripts/funes-sync.log"
+        touch -t 202001010000 "$scripts/converted"
+        printf '{"transcript_path":"%s"}' "$(printf '%s%s' "$lead" "$(cygpath -w "$tree/w.jsonl")" | sed 's/\\/\\\\/g')" >"$tmp/payload"
+        sh "$scripts/funes-index.sh" --worker "$tmp/payload"
+        log=$(cat "$scripts/funes-sync.log")
+        [ -f "$spool/w.funes.jsonl" ] || fail "a transcript Windows named ${lead}C:\\… was not converted: $log"
+        if grep -q 'convert: FAILED' "$scripts/funes-sync.log"; then fail "a conversion failed: $log"; fi
+        [ "$(grep -c 'convert: w$' "$scripts/funes-sync.log")" = 1 ] || fail "a transcript Windows named ${lead}C:\\… was converted more than once: $log"
+        [ "$scripts/converted" -nt "$tree/w.jsonl" ] || fail "a run on a transcript Windows named ${lead}C:\\… left the mark where it was"
+    done
 fi
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message

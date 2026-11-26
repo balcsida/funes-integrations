@@ -93,11 +93,11 @@ last_turn() {
 }
 
 # A path as this shell spells it. Claude Code on Windows names a directory as Windows does,
-# `C:\Users\…`, which a `/` cannot split and which is not what `find` lists; Git's `cygpath` gives
-# the spelling `find` uses.
+# `C:\Users\…`, or `\\server\share\…` on a share, which a `/` cannot split and which is not what
+# `find` lists; Git's `cygpath` gives the spelling `find` uses.
 posix_path() {
     case $1 in
-    [A-Za-z]:[\\/]*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    [A-Za-z]:[\\/]* | *\\*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
     esac
     printf '%s\n' "$1"
 }

@@ -22,11 +22,12 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # A path as this shell spells it. Codex on Windows names a rollout and its directories as Windows
-# does, `C:\Users\…`, which a `/` cannot split and which is not what `find` lists; Git's `cygpath`
+# does, `C:\Users\…`, or `\\server\share\…` on a share, or `\\?\C:\Users\…` verbatim, as Rust's
+# canonical paths are, which a `/` cannot split and which is not what `find` lists; Git's `cygpath`
 # gives the spelling `find` uses.
 posix_path() {
     case $1 in
-    [A-Za-z]:[\\/]*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    [A-Za-z]:[\\/]* | *\\*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
     esac
     printf '%s\n' "$1"
 }

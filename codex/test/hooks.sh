@@ -240,22 +240,28 @@ fire
 [ -f "$spool/rollout-x.funes.jsonl" ] ||
     fail "a rollout whose conversion failed was never converted again"
 
-# Codex on Windows names the rollout and the plugin's data as Windows does, `C:\Users\…`: the rollout
-# is converted under its own stem, once, though the sweep lists it as the shell spells it, and the
-# run moves the mark. A name the hook could not split would fail its conversion and hold the mark
-# back, so every turn after swept everything since. Only Windows has the spelling to test.
+# Codex on Windows names the rollout and the plugin's data as Windows does, `C:\Users\…`, or led by
+# `\\` when they live on a share, `\\server\share\…`, or are spelled verbatim, `\\?\C:\Users\…`, as
+# Rust's canonical paths are: the rollout is converted under its own stem, once, though the sweep
+# lists it as the shell spells it, and the run moves the mark. A name the hook could not split would
+# fail its conversion and hold the mark back, so every turn after swept everything since. Only
+# Windows has the spellings to test; the verbatim one stands for a share, which a runner may not
+# serve.
 if command -v cygpath >/dev/null 2>&1; then
-    tick
-    rollout rollout-w.jsonl
-    : >"$data/funes-sync.log"
-    touch -t 202001010000 "$data/converted"
-    printf '{"transcript_path":"%s","session_id":"w"}' "$(cygpath -w "$tree/rollout-w.jsonl" | sed 's/\\/\\\\/g')" >"$tmp/payload"
-    PLUGIN_DATA=$(cygpath -w "$data") sh "$scripts/funes-index.sh" --worker "$tmp/payload"
-    log=$(cat "$data/funes-sync.log")
-    [ -f "$spool/rollout-w.funes.jsonl" ] || fail "a rollout Windows named was not converted: $log"
-    if grep -q 'convert: FAILED' "$data/funes-sync.log"; then fail "a conversion failed: $log"; fi
-    [ "$(grep -c 'convert: rollout-w$' "$data/funes-sync.log")" = 1 ] || fail "a rollout Windows named was converted more than once: $log"
-    [ "$data/converted" -nt "$tree/rollout-w.jsonl" ] || fail "a run on a rollout Windows named left the mark where it was"
+    for lead in '' '\\?\'; do
+        tick
+        rollout rollout-w.jsonl
+        rm -f "$spool/rollout-w.funes.jsonl"
+        : >"$data/funes-sync.log"
+        touch -t 202001010000 "$data/converted"
+        printf '{"transcript_path":"%s","session_id":"w"}' "$(printf '%s%s' "$lead" "$(cygpath -w "$tree/rollout-w.jsonl")" | sed 's/\\/\\\\/g')" >"$tmp/payload"
+        PLUGIN_DATA="$lead$(cygpath -w "$data")" sh "$scripts/funes-index.sh" --worker "$tmp/payload"
+        log=$(cat "$data/funes-sync.log")
+        [ -f "$spool/rollout-w.funes.jsonl" ] || fail "a rollout Windows named ${lead}C:\\… was not converted: $log"
+        if grep -q 'convert: FAILED' "$data/funes-sync.log"; then fail "a conversion failed: $log"; fi
+        [ "$(grep -c 'convert: rollout-w$' "$data/funes-sync.log")" = 1 ] || fail "a rollout Windows named ${lead}C:\\… was converted more than once: $log"
+        [ "$data/converted" -nt "$tree/rollout-w.jsonl" ] || fail "a run on a rollout Windows named ${lead}C:\\… left the mark where it was"
+    done
 fi
 
 # A run Codex hands no directory keeps its state where Codex has the plugin's data, which is where
