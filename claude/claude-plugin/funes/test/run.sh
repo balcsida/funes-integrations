@@ -28,6 +28,21 @@ if [ "$out/got.funes.jsonl" -nt "$HERE/session.jsonl" ] || [ "$out/got.funes.jso
     exit 1
 fi
 
+# A caller that asked the jq on PATH already hands its answer down in FUNES_JQ_FLAGS, and the
+# converter does not ask again: a seed asks once, not once per transcript.
+mkdir "$out/bin"
+cat >"$out/bin/jq" <<EOF
+#!/bin/sh
+[ "\$*" != "-n 1" ] || : >"$out/asked"
+exec "$(command -v jq)" "\$@"
+EOF
+chmod +x "$out/bin/jq"
+PATH="$out/bin:$PATH" FUNES_JQ_FLAGS=$JQ_FLAGS "$HERE/../convert" "$HERE/session.jsonl" "$out/handed.funes.jsonl"
+if [ -e "$out/asked" ] || ! cmp -s "$HERE/expected.funes.jsonl" "$out/handed.funes.jsonl"; then
+    echo "claude converter: handed jq's flags, it asked jq again or converted otherwise" >&2
+    exit 1
+fi
+
 # The numbering of a session the memory already holds, from its row in `--indexed`. In
 # `queued.jsonl`, q1 and q2 were typed while Claude was working, and a2 and a3 are one reply written
 # as two lines with one stamp.

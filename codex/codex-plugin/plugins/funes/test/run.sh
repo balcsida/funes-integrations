@@ -25,6 +25,21 @@ if [ "$out/got.funes.jsonl" -nt "$HERE/session.jsonl" ] || [ "$out/got.funes.jso
     exit 1
 fi
 
+# A caller that asked the jq on PATH already hands its answer down in FUNES_JQ_FLAGS, and the
+# converter does not ask again: a seed asks once, not once per rollout.
+mkdir "$out/bin"
+cat >"$out/bin/jq" <<EOF
+#!/bin/sh
+[ "\$*" != "-n 1" ] || : >"$out/asked"
+exec "$(command -v jq)" "\$@"
+EOF
+chmod +x "$out/bin/jq"
+PATH="$out/bin:$PATH" FUNES_JQ_FLAGS=$JQ_FLAGS "$HERE/../convert" "$HERE/session.jsonl" "$out/handed.funes.jsonl"
+if [ -e "$out/asked" ] || ! cmp -s "$HERE/expected.funes.jsonl" "$out/handed.funes.jsonl"; then
+    echo "codex converter: handed jq's flags, it asked jq again or converted otherwise" >&2
+    exit 1
+fi
+
 # The first four turns were captured with Codex 0.169.0, a Stop hook and a local mock model server.
 # Paths and session metadata are normalized. Later turns cover multiple hooks and user messages
 # that quote or mix hook text.

@@ -62,7 +62,7 @@ convert_one() {
     [ -n "$src" ] && [ -r "$src" ] || return 0
     stem=${src##*/}
     stem=${stem%.jsonl}
-    if PATH="$(dirname "$jq"):$PATH" "$HERE/../convert" --indexed "$HERE/indexed" "$src" "$SPOOL/$stem.funes.jsonl" 2>>"$LOG"; then
+    if PATH="$(dirname "$jq"):$PATH" FUNES_JQ_FLAGS=$JQ_FLAGS "$HERE/../convert" --indexed "$HERE/indexed" "$src" "$SPOOL/$stem.funes.jsonl" 2>>"$LOG"; then
         log "convert: $stem"
     else
         log "convert: FAILED for $src"

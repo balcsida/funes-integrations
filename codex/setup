@@ -107,7 +107,7 @@ indexed() {
 last_turn() {
     sample="$2/${1##*/}"
     { head -n 1 "$1"; tail -n 32 "$1"; } >"$sample"
-    "$PLUGIN_DIR/convert" "$sample" | tail -n 1 | jq $JQ_FLAGS -r '"\(.session_id) \(.ts)"'
+    FUNES_JQ_FLAGS=$JQ_FLAGS "$PLUGIN_DIR/convert" "$sample" | tail -n 1 | jq $JQ_FLAGS -r '"\(.session_id) \(.ts)"'
 }
 
 # Whether a session the rows `$1` list is missing from the rows `$2`: one the memory held at the
@@ -148,7 +148,7 @@ seed() {
             continue
         fi
         stem=${src##*/}
-        "$PLUGIN_DIR/convert" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
+        FUNES_JQ_FLAGS=$JQ_FLAGS "$PLUGIN_DIR/convert" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
     done <"$work/rollouts"
     [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"
     rm -rf "$work"
