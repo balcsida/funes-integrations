@@ -75,7 +75,8 @@ function session(dir, name) {
 
 // The extension as installed under `root`: its files, the records `setup` writes beside them, and
 // a worker script that records what it was launched for and what the spool held when it started.
-function install(root, { memory = "", pending = false } = {}) {
+// The sessions root is recorded as `recorded` spells it, when given.
+function install(root, { memory = "", pending = false, recorded = "" } = {}) {
   const ext = join(root, "ext");
   mkdirSync(join(ext, "scripts"), { recursive: true });
   for (const name of ["index.ts", "convert.mjs"]) cpSync(join(HERE, "..", name), join(ext, name));
@@ -107,7 +108,7 @@ export function spawn(command, ...args) {
   const spool = join(root, "spool");
   mkdirSync(spool);
   writeFileSync(join(ext, "spool"), `${spool}\n`);
-  writeFileSync(join(ext, "sessions"), `${sessions}\n`);
+  writeFileSync(join(ext, "sessions"), `${recorded || sessions}\n`);
   if (pending) writeFileSync(join(ext, "seed-pending"), `${sessions}\n`);
   if (memory) writeFileSync(join(ext, "memory"), `${memory}\n`);
   // The package pi lends its extensions, for the version funes names.
@@ -209,8 +210,8 @@ async function startup(memory, { body = MCP_SERVER, missing = "" } = {}) {
 
 // A turn of the session at `file`, with `stale` written since the last sweep and `foreign` a
 // `.jsonl` no sweep may touch: what the spool holds afterwards, and what the worker was handed.
-async function turn(root, file, stale, foreign, memory = "") {
-  const { ext, spool, log } = install(root, { memory });
+async function turn(root, file, stale, foreign, { memory = "", recorded = "" } = {}) {
+  const { ext, spool, log } = install(root, { memory, recorded });
   process.env.FUNES_BIN = fakeFunes(root);
   const handlers = await activate(ext);
   // The records are older than the sessions, so the sweep sees the sessions as new.
@@ -277,7 +278,7 @@ for (const [missing, error] of [["missing-funes", "ENOENT"], ["no-pipes", "EMFIL
 {
   const root = scratch("funes-pi-turn-");
   const sessions = join(root, "sessions");
-  const got = await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"), "acme/kb");
+  const got = await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"), { memory: "acme/kb" });
   if (got.worker !== "funes-index.sh acme/kb") throw new Error(`memory bound: expected the turn's worker handed the memory, got ${got.worker}`);
 }
 // A session pi was pointed elsewhere (`--session-dir`) sits in that directory with no directory
@@ -288,6 +289,15 @@ for (const [missing, error] of [["missing-funes", "ENOENT"], ["no-pipes", "EMFIL
   const got = await turn(root, join(custom, "a.jsonl"), join(custom, "b.jsonl"), join(root, "other/x.jsonl"));
   if (!got.named || !got.stale) throw new Error(`elsewhere: expected both sessions converted, got ${JSON.stringify(got)}`);
   if (got.foreign) throw new Error("elsewhere: a file above the session's directory was converted");
+}
+// On Windows, where a path's case is not its own, the root `setup` recorded in another case than pi
+// names the session in is the same root: the sweep still walks all of it, and nothing beside it.
+if (process.platform === "win32") {
+  const root = scratch("funes-pi-turn-");
+  const sessions = join(root, "sessions");
+  const got = await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"), { recorded: sessions.toUpperCase() });
+  if (!got.named || !got.stale) throw new Error(`root in another case: expected both sessions converted, got ${JSON.stringify(got)}`);
+  if (got.foreign) throw new Error("root in another case: a file beside the root was converted");
 }
 // On Windows the worker's shell comes from a directory PATH names in full, or from Git's install,
 // never from the project pi runs in, which Windows searches first: not one in a directory PATH

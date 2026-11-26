@@ -285,9 +285,11 @@ function convertStale(file: string) {
 // `--session-dir`, with no directory per project, and a walk any higher would take in files that
 // are not sessions at all.
 // Both paths are resolved before they are compared: on Windows, pi names the session `C:\…`, and
-// `setup` recorded the root `C:/…`.
+// `setup` recorded the root `C:/…`. There a path's case is not its own either, so it is not compared:
+// `c:\users\…` is under `C:/Users/…`.
 function sweepRoot(file: string): string {
-  return SESSIONS && resolve(file).startsWith(resolve(SESSIONS) + sep) ? SESSIONS : dirname(file);
+  const key = (path: string) => (process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path));
+  return SESSIONS && key(file).startsWith(key(SESSIONS) + sep) ? SESSIONS : dirname(file);
 }
 
 // Convert the history `setup` left behind, once, and say whether it did. Failure keeps the marker,
