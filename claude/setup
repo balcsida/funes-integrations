@@ -65,7 +65,8 @@ require_jq() {
     fi
     if ! "$PLUGIN_ROOT/funes/test/run.sh" >/dev/null 2>&1; then
         echo "the jq on PATH does not convert Claude Code's transcripts the way funes reads them — run" >&2
-        echo "\`$PLUGIN_ROOT/funes/test/run.sh\` to see how it differs. funes needs a stock jq 1.6 or newer." >&2
+        echo "\`$PLUGIN_ROOT/funes/test/run.sh\` to see how it differs. funes needs a stock jq 1.6 or newer," >&2
+        echo "and 1.7 or newer on Windows." >&2
         exit 1
     fi
 }

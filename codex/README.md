@@ -53,9 +53,10 @@ Codex's own rollouts are untouched.
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
 - `codex` on `PATH`, with plugins; without it the files are installed and the commands to register
   them printed.
-- A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
-  macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`, and on
-  Windows `winget install jqlang.jq`.
+- A stock `jq`, 1.6 or newer, and 1.7 or newer on Windows, where an older one writes every line
+  with CRLF and has no `--binary` to stop it: the converter is jq, and there is nothing to capture
+  without it. macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`,
+  `apk add jq`, and on Windows `winget install jqlang.jq`.
   `funes add codex` checks that the jq on PATH converts a rollout the way funes reads it before it
   installs anything.
 - On Windows, [Git for Windows](https://gitforwindows.org): funes runs `setup` with its shell, and
